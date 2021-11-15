@@ -111,6 +111,7 @@ Data source description: [Kaggle StackLite](https://www.kaggle.com/stackoverflow
 ### 5. Scenarios
 1. The data was increased by 100x
 - This data pipeline is hosted in AWS. Specifically MWAA (Managed Airflow service), S3 and RedShift. When the data scale up to 100x, we can adapt that change quickly by scale out our cluster in RedShift and MWAA.
+- Consider using EMR and Spark to process big data
 2. The pipelines would be run on a daily basis by 7 am every day
 - We can config this requirement by adjusting dag **schedule_interval** argument
 3. The database needed to be accessed by 100+ people
@@ -119,4 +120,4 @@ Data source description: [Kaggle StackLite](https://www.kaggle.com/stackoverflow
 ### 6. Final notes
 - Hash_key columns are created for future use, incremental load is not implemented in this version
 - Pushing data into S3 authenticated by secret key due to lack of AWS permission
-- To get the project run in development, only first 10,000 rows used in the data pipeline
+- To get the project run in development, only first 1000,000 rows used in the data pipeline

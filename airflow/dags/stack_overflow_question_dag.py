@@ -129,7 +129,7 @@ with DAG(
 
         path_data = config['FILE_LOCATION'][f'loc_so_{data_name}']
         path_output = config['FILE_LOCATION'][f'loc_{data_name}_with_hash']
-        df = pd.read_csv(path_data, compression='zip')
+        df = pd.read_csv(path_data, compression='zip', nrows=1000000)
 
         # Add hash_key column to track data changes in each row
         df['hash_key'] = df.apply(lambda row: pd.util.hash_pandas_object(

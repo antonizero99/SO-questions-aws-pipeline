@@ -32,7 +32,7 @@ with DAG(
         'stack_overflow_question_pipeline',
         default_args=default_args,
         description='Download, process Stack Overflow questions and push to S3 bucket and send to RedShift DW',
-        schedule_interval=timedelta(days=1),
+        schedule_interval='0 1 * * *',
         start_date=datetime(2021, 11, 11),
         catchup=False,
         tags=['capstone'],
@@ -52,7 +52,6 @@ with DAG(
         # SESSION_TOKEN: {config["AWS_CREDENTIAL"]["AWS_SESSION_TOKEN"]}')
         return config
 
-
     def print_log(message):
         """
         Log into console datetime to execute along with message
@@ -60,6 +59,46 @@ with DAG(
             message: [String] Message to print in the console
         """
         print('{} - '.format(datetime.now()) + message)
+
+    def check_data_integrity(config, data_name):
+        """
+        Check tables before and after transformation whether or not number of rows changes
+        :param config: environment configuration
+        :param data_name: name of data need to check
+        :return:
+        none
+        Raise ValueError when there is data integrity error
+        """
+        import pandas as pd
+
+        path_data = config['FILE_LOCATION'][f'loc_so_{data_name}']
+        path_data_hash = config['FILE_LOCATION'][f'loc_{data_name}_with_hash']
+
+        df = pd.read_csv(path_data, compression='zip')
+        df_hash = pd.read_csv(path_data_hash)
+
+        if len(df) != len(df_hash):
+            raise ValueError(f'Table {data_name}_with_hash has integrity error')
+        print(f'Data quality on table {data_name} check passed integrity')
+
+    def check_duplicate_data_dim_table(config, table, column):
+        """
+        Check dim table whether there is unexpected duplication of data
+        :param config: environment configuration
+        :param table: name of table need to check
+        :param column: name of column in table need to check
+        :return:
+        """
+        import pandas as pd
+
+        path_data = config['FILE_LOCATION'][f'loc_{table}']
+
+        df = pd.read_csv(path_data)
+        df_remove_duplicate = df[column].drop_duplicates()
+
+        if(len(df) != len(df_remove_duplicate)):
+            raise ValueError(f'Table {table} has unexpected data duplication at {column} column')
+        print(f'Table {table} check duplicated data passed')
 
     def download_data(config, data_name):
         """
@@ -90,7 +129,7 @@ with DAG(
 
         path_data = config['FILE_LOCATION'][f'loc_so_{data_name}']
         path_output = config['FILE_LOCATION'][f'loc_{data_name}_with_hash']
-        df = pd.read_csv(path_data, compression='zip', nrows=10000)
+        df = pd.read_csv(path_data, compression='zip')
 
         # Add hash_key column to track data changes in each row
         df['hash_key'] = df.apply(lambda row: pd.util.hash_pandas_object(
@@ -117,7 +156,7 @@ with DAG(
         path_fact_question = config['FILE_LOCATION']['loc_fact_question']
         print_log(f'Done reading file location config')
 
-        df_question = pd.read_csv(path_question, nrows=10000)
+        df_question = pd.read_csv(path_question)
         print_log(f'Done reading question_with_hash csv')
 
         # BEGIN: Create dim_date table
@@ -284,6 +323,18 @@ with DAG(
         op_kwargs={'config': read_config_file(), 'data_name': 'question_tag'}
     )
 
+    check_integrity_question = PythonOperator(
+        task_id="check_integrity_question",
+        python_callable=check_data_integrity,
+        op_kwargs={'config': read_config_file(), 'data_name': 'question'}
+    )
+
+    check_integrity_question_tag = PythonOperator(
+        task_id="check_integrity_question_tag",
+        python_callable=check_data_integrity,
+        op_kwargs={'config': read_config_file(), 'data_name': 'question_tag'}
+    )
+
     transform_question_data = PythonOperator(
         task_id="transform_question_data",
         python_callable=transform_question_data,
@@ -294,6 +345,18 @@ with DAG(
         task_id="transform_question_tag_data",
         python_callable=transform_question_tag_data,
         op_kwargs={'config': read_config_file()}
+    )
+
+    check_dup_data_dim_date = PythonOperator(
+        task_id="check_dup_data_dim_date",
+        python_callable=check_duplicate_data_dim_table,
+        op_kwargs={'config': read_config_file(), 'table': 'dim_date', 'column': 'date'}
+    )
+
+    check_dup_data_dim_tag = PythonOperator(
+        task_id="check_dup_data_dim_tag",
+        python_callable=check_duplicate_data_dim_table,
+        op_kwargs={'config': read_config_file(), 'table': 'dim_tag', 'column': 'Tag'}
     )
 
     push_data_to_s3 = PythonOperator(
@@ -331,10 +394,18 @@ with DAG(
     )
 
     start_operator >> [download_question, download_question_tag]
-    [download_question, download_question_tag] >> [add_hash_column_question, add_hash_column_question_tag]
-    add_hash_column_question >> transform_question_data
-    add_hash_column_question_tag >> transform_question_tag_data
-    [transform_question_data, transform_question_tag_data] >> push_data_to_s3
+
+    download_question >> add_hash_column_question
+    add_hash_column_question >> check_integrity_question
+    download_question_tag >> add_hash_column_question_tag
+    add_hash_column_question_tag >> check_integrity_question_tag
+
+    check_integrity_question >> transform_question_data
+    transform_question_data >> check_dup_data_dim_date
+    check_integrity_question_tag >> transform_question_tag_data
+    transform_question_tag_data >> check_dup_data_dim_tag
+
+    [check_dup_data_dim_date, check_dup_data_dim_tag] >> push_data_to_s3
     push_data_to_s3 >> [dim_date_to_redshift, dim_date_to_redshift, fact_question_to_redshift,
                         fact_question_tag_to_redshift]
     # END: TASK CONFIGURATION

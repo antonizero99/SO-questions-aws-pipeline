@@ -26,6 +26,9 @@ Evaluation of tech stack selection:
 2. S3: An object storage without limitation on how large of the objects. We can use it as a data lake in many scenario
 3. RedShift: A managed data warehouse with ability of elastically scale out and scale in to adapt increase of connections, data size or users
 
+Schedule of running:
+- This dataset is coming from Stack Overflow data source which is used worldwide. So this pipeline might pull data from a staging data source which is usually updated daily. Propose this data pipeline run daily at 1:00AM UTC.
+
 ### 1. Data sources:
 
 2 data sources:
@@ -39,6 +42,14 @@ Evaluation of tech stack selection:
 - Sample data of question_tags.csv
 
 ![question_raw_table](https://github.com/antonizero99/SO-questions-aws-pipeline/raw/master/images/questions_tag_raw.jpg)
+
+- questions.csv profiling
+![question_profiling](https://github.com/antonizero99/SO-questions-aws-pipeline/raw/master/images/questions_profiling.jpg)
+~17.2 million records
+
+- question_tags.csv profiling
+![question_tags_profiling](https://github.com/antonizero99/SO-questions-aws-pipeline/raw/master/images/question_tags_profiling.jpg)
+~50.5 million records
 
 Data source description: [Kaggle StackLite](https://www.kaggle.com/stackoverflow/stacklite)
 
